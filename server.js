@@ -37,7 +37,7 @@ app.get("/api/ping", (req, res) => {
 
 app.post("/api/contact", async (req, res) => {
   const { name, email, subject, phone, message } = req.body;
-  
+
   try {
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -47,7 +47,7 @@ app.post("/api/contact", async (req, res) => {
         pass: process.env.SMTP_PASS,
       },
     });
-    
+
     const mailOptions = {
       from: `Gigabull Contact Form <${process.env.SMTP_USER}>`,
       to: process.env.MY_EMAIL,
@@ -159,3 +159,5 @@ app.post("/api/enquiries", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ Contact server listening on port ${PORT}`);
 });
+
+export default app;
