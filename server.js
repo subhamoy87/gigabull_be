@@ -30,8 +30,39 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// Server-side admin password state (initialized from process.env.ADMIN_PASSWORD or default "admin123")
+let serverAdminPassword = process.env.ADMIN_PASSWORD || "admin123";
+
 app.get("/api/ping", (req, res) => {
   res.status(200).send("ping success!");
+});
+
+// Admin Login Endpoint
+app.post("/api/admin/login", (req, res) => {
+  const { password } = req.body;
+  if (!password) {
+    return res.status(400).json({ success: false, error: "Password is required" });
+  }
+
+  if (password === serverAdminPassword) {
+    console.log("[AUTH] Admin login successful");
+    return res.status(200).json({ success: true, message: "Admin authenticated successfully" });
+  }
+
+  console.warn("[AUTH] Admin login failed: invalid password");
+  return res.status(401).json({ success: false, error: "Invalid admin password" });
+});
+
+// Admin Change Password Endpoint
+app.post("/api/admin/change-password", (req, res) => {
+  const { newPassword } = req.body;
+  if (!newPassword || typeof newPassword !== "string" || !newPassword.trim()) {
+    return res.status(400).json({ success: false, error: "New password is required" });
+  }
+
+  serverAdminPassword = newPassword.trim();
+  console.log("[AUTH] Admin password dynamically updated on server");
+  return res.status(200).json({ success: true, message: "Admin password updated successfully" });
 });
 
 
