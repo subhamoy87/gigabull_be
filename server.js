@@ -28,7 +28,74 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+
+// In-memory products store (persisted to Redis if configured)
+let serverProductsData = null;
+
+async function getStoredProductsData() {
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (redisUrl && redisToken) {
+    try {
+      const response = await fetch(`${redisUrl}/get/products_data`, {
+        headers: { Authorization: `Bearer ${redisToken}` }
+      });
+      const data = await response.json();
+      if (data && data.result) {
+        return JSON.parse(data.result);
+      }
+    } catch (err) {
+      console.error("[PRODUCTS] Failed to fetch products from Upstash Redis:", err);
+    }
+  }
+  return serverProductsData;
+}
+
+async function saveStoredProductsData(productsData) {
+  serverProductsData = productsData;
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (redisUrl && redisToken) {
+    try {
+      await fetch(`${redisUrl}/set/products_data/${encodeURIComponent(JSON.stringify(productsData))}`, {
+        headers: { Authorization: `Bearer ${redisToken}` }
+      });
+      console.log("[PRODUCTS] Products data persisted to Upstash Redis");
+    } catch (err) {
+      console.error("[PRODUCTS] Failed to persist products data to Upstash Redis:", err);
+    }
+  }
+}
+
+// Products Endpoints
+app.get("/api/products", async (req, res) => {
+  try {
+    const products = await getStoredProductsData();
+    return res.status(200).json({ success: true, productsData: products });
+  } catch (err) {
+    console.error("[PRODUCTS] Error fetching products:", err);
+    return res.status(500).json({ success: false, error: "Failed to fetch products" });
+  }
+});
+
+app.post("/api/save-products-data", async (req, res) => {
+  const { productsData } = req.body;
+  if (!productsData) {
+    return res.status(400).json({ success: false, error: "productsData is required" });
+  }
+
+  try {
+    await saveStoredProductsData(productsData);
+    console.log("[PRODUCTS] Products updated on server");
+    return res.status(200).json({ success: true, message: "Products saved successfully on server" });
+  } catch (err) {
+    console.error("[PRODUCTS] Error saving products:", err);
+    return res.status(500).json({ success: false, error: "Failed to save products" });
+  }
+});
 
 // Server-side admin password logic driven strictly by process.env.ADMIN_PASSWORD
 
