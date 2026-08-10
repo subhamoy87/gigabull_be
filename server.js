@@ -30,8 +30,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Server-side admin password state (initialized from process.env.ADMIN_PASSWORD or default "admin123")
-let inMemoryAdminPassword = process.env.ADMIN_PASSWORD || "admin123";
+// Server-side admin password logic driven strictly by process.env.ADMIN_PASSWORD
 
 async function updateVercelEnvVar(key, value) {
   const token = process.env.VERCEL_TOKEN;
@@ -84,7 +83,6 @@ async function updateVercelEnvVar(key, value) {
 }
 
 async function setAdminPassword(newPassword) {
-  inMemoryAdminPassword = newPassword;
   process.env.ADMIN_PASSWORD = newPassword;
 
   const updatedOnVercel = await updateVercelEnvVar("ADMIN_PASSWORD", newPassword);
@@ -96,7 +94,7 @@ async function setAdminPassword(newPassword) {
   console.warn("[AUTH] Admin password updated in process env. Update ADMIN_PASSWORD in Vercel Dashboard Settings to persist across redeployments.");
   return {
     success: true,
-    message: "Password updated. Remember to set ADMIN_PASSWORD in Vercel Project Settings for permanent persistence.",
+    message: "Password updated for active session. Remember to set ADMIN_PASSWORD in Vercel Project Settings for permanent persistence.",
   };
 }
 
@@ -111,7 +109,12 @@ app.post("/api/admin/login", async (req, res) => {
     return res.status(400).json({ success: false, error: "Password is required" });
   }
 
-  const currentPassword = process.env.ADMIN_PASSWORD || inMemoryAdminPassword || "admin123";
+  const currentPassword = process.env.ADMIN_PASSWORD;
+
+  if (!currentPassword) {
+    console.error("[AUTH] ADMIN_PASSWORD environment variable is not configured on server.");
+    return res.status(500).json({ success: false, error: "Server authentication misconfigured. ADMIN_PASSWORD env variable missing." });
+  }
 
   if (password === currentPassword) {
     console.log("[AUTH] Admin login successful");
