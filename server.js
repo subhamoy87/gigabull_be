@@ -290,15 +290,6 @@ app.post("/api/admin/change-password", async (req, res) => {
 });
 
 
-const getRecipientList = () => {
-  const raw = process.env.MY_EMAIL || "";
-  const parsed = raw
-    .split(/[,;]/)
-    .map((e) => e.trim().replace(/^["']|["']$/g, ""))
-    .filter((e) => e.length > 0 && e.includes("@"));
-  return parsed.length > 0 ? parsed : raw;
-};
-
 app.post("/api/contact", async (req, res) => {
   const { name, email, subject, phone, message } = req.body;
 
@@ -312,11 +303,9 @@ app.post("/api/contact", async (req, res) => {
       },
     });
 
-    const recipients = getRecipientList();
-
     const mailOptions = {
       from: `Gigabull Contact Form <${process.env.SMTP_USER}>`,
-      to: recipients,
+      to: process.env.MY_EMAIL,
       subject: subject || "New Contact Form Submission - GIGABULL",
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
@@ -348,7 +337,7 @@ app.post("/api/contact", async (req, res) => {
       `,
     };
 
-    console.log("[EMAIL] Sending contact form to:", recipients);
+    console.log("[EMAIL] Sending to:", process.env.MY_EMAIL);
 
     const info = await transporter.sendMail(mailOptions);
     console.log("[EMAIL] Message sent:", info.messageId);
@@ -378,11 +367,10 @@ app.post("/api/enquiries", async (req, res) => {
     });
 
     const productLink = `https://gigabull.in/product/${productSlug}`;
-    const recipients = getRecipientList();
 
     const mailOptions = {
       from: `Gigabull Enquiry <${process.env.SMTP_USER}>`,
-      to: recipients,
+      to: process.env.MY_EMAIL,
       subject: `Product Enquiry - ${productName}`,
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
@@ -412,7 +400,7 @@ app.post("/api/enquiries", async (req, res) => {
       `,
     };
 
-    console.log(`[EMAIL] Sending enquiry for: ${productName} to`, recipients);
+    console.log(`[EMAIL] Sending enquiry for: ${productName} to ${process.env.MY_EMAIL}`);
     const info = await transporter.sendMail(mailOptions);
     console.log("[EMAIL] Enquiry sent:", info.messageId);
 
