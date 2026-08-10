@@ -28,7 +28,8 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // In-memory products store (persisted to Redis if configured)
 let serverProductsData = null;
@@ -104,8 +105,62 @@ let certificateFileName = "RCMC Certificate.pdf";
 let brochureBuffer = null;
 let brochureFileName = "Brochure Gigabull.pdf";
 
+async function loadDocumentsFromRedis() {
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!redisUrl || !redisToken) return;
+
+  try {
+    const certRes = await fetch(`${redisUrl}/get/certificate_data`, {
+      headers: { Authorization: `Bearer ${redisToken}` }
+    });
+    const certData = await certRes.json();
+    if (certData && certData.result) {
+      const parsed = typeof certData.result === 'string' ? JSON.parse(certData.result) : certData.result;
+      if (parsed.pdfBase64) {
+        const clean = parsed.pdfBase64.replace(/^data:application\/pdf;base64,/, "").trim();
+        certificateBuffer = Buffer.from(clean, "base64");
+      }
+      if (parsed.fileName) certificateFileName = parsed.fileName;
+    }
+
+    const brochRes = await fetch(`${redisUrl}/get/brochure_data`, {
+      headers: { Authorization: `Bearer ${redisToken}` }
+    });
+    const brochData = await brochRes.json();
+    if (brochData && brochData.result) {
+      const parsed = typeof brochData.result === 'string' ? JSON.parse(brochData.result) : brochData.result;
+      if (parsed.pdfBase64) {
+        const clean = parsed.pdfBase64.replace(/^data:application\/pdf;base64,/, "").trim();
+        brochureBuffer = Buffer.from(clean, "base64");
+      }
+      if (parsed.fileName) brochureFileName = parsed.fileName;
+    }
+  } catch (err) {
+    console.error("[DOCUMENTS] Error loading documents from Redis:", err);
+  }
+}
+loadDocumentsFromRedis();
+
+async function saveDocumentToRedis(key, data) {
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!redisUrl || !redisToken) return;
+
+  try {
+    await fetch(`${redisUrl}/set/${key}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${redisToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    console.log(`[DOCUMENTS] Saved ${key} to Upstash Redis`);
+  } catch (err) {
+    console.error(`[DOCUMENTS] Failed to save ${key} to Upstash Redis:`, err);
+  }
+}
+
 // Endpoints to upload certificate PDF
-app.post("/api/upload-certificate", (req, res) => {
+app.post("/api/upload-certificate", async (req, res) => {
   const { pdfBase64, fileName } = req.body;
   if (!pdfBase64) {
     return res.status(400).json({ success: false, error: "pdfBase64 is required" });
@@ -115,6 +170,8 @@ app.post("/api/upload-certificate", (req, res) => {
     const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, "").trim();
     certificateBuffer = Buffer.from(cleanBase64, "base64");
     if (fileName) certificateFileName = fileName;
+
+    await saveDocumentToRedis("certificate_data", { pdfBase64, fileName: certificateFileName });
 
     console.log("[DOCUMENTS] Certificate PDF updated on server:", certificateFileName);
     return res.status(200).json({
@@ -129,7 +186,7 @@ app.post("/api/upload-certificate", (req, res) => {
 });
 
 // Endpoints to upload brochure PDF
-app.post("/api/upload-brochure", (req, res) => {
+app.post("/api/upload-brochure", async (req, res) => {
   const { pdfBase64, fileName } = req.body;
   if (!pdfBase64) {
     return res.status(400).json({ success: false, error: "pdfBase64 is required" });
@@ -139,6 +196,8 @@ app.post("/api/upload-brochure", (req, res) => {
     const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, "").trim();
     brochureBuffer = Buffer.from(cleanBase64, "base64");
     if (fileName) brochureFileName = fileName;
+
+    await saveDocumentToRedis("brochure_data", { pdfBase64, fileName: brochureFileName });
 
     console.log("[DOCUMENTS] Brochure PDF updated on server:", brochureFileName);
     return res.status(200).json({
@@ -153,7 +212,10 @@ app.post("/api/upload-brochure", (req, res) => {
 });
 
 // Serve Certificate PDF binary directly
-app.get("/api/documents/certificate", (req, res) => {
+app.get("/api/documents/certificate", async (req, res) => {
+  if (!certificateBuffer) {
+    await loadDocumentsFromRedis();
+  }
   if (!certificateBuffer) {
     return res.status(404).send("No custom certificate uploaded yet.");
   }
@@ -163,13 +225,32 @@ app.get("/api/documents/certificate", (req, res) => {
 });
 
 // Serve Brochure PDF binary directly
-app.get("/api/documents/brochure", (req, res) => {
+app.get("/api/documents/brochure", async (req, res) => {
+  if (!brochureBuffer) {
+    await loadDocumentsFromRedis();
+  }
   if (!brochureBuffer) {
     return res.status(404).send("No custom brochure uploaded yet.");
   }
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="${brochureFileName}"`);
   res.send(brochureBuffer);
+});
+
+// Get document metadata and server status
+app.get("/api/documents", async (req, res) => {
+  if (!certificateBuffer || !brochureBuffer) {
+    await loadDocumentsFromRedis();
+  }
+  return res.status(200).json({
+    success: true,
+    documents: {
+      certificateUrl: certificateBuffer ? "/api/documents/certificate" : null,
+      certificateName: certificateFileName,
+      brochureUrl: brochureBuffer ? "/api/documents/brochure" : null,
+      brochureName: brochureFileName,
+    }
+  });
 });
 
 // Endpoint to get document metadata (filenames and status)
