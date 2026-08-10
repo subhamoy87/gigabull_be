@@ -31,20 +31,89 @@ app.use(cors(corsOptions));
 app.use(express.json());
 
 // Server-side admin password state (initialized from process.env.ADMIN_PASSWORD or default "admin123")
-let serverAdminPassword = process.env.ADMIN_PASSWORD || "admin123";
+let inMemoryAdminPassword = process.env.ADMIN_PASSWORD || "admin123";
+
+async function updateVercelEnvVar(key, value) {
+  const token = process.env.VERCEL_TOKEN;
+  const projectId = process.env.VERCEL_PROJECT_ID;
+  const teamId = process.env.VERCEL_TEAM_ID;
+
+  if (!token || !projectId) {
+    return false;
+  }
+
+  const teamQuery = teamId ? `?teamId=${teamId}` : "";
+
+  try {
+    const listRes = await fetch(`https://api.vercel.com/v9/projects/${projectId}/env${teamQuery}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const listData = await listRes.json();
+    const existing = listData.envs ? listData.envs.find((e) => e.key === key) : null;
+
+    if (existing) {
+      const patchRes = await fetch(`https://api.vercel.com/v9/projects/${projectId}/env/${existing.id}${teamQuery}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ value }),
+      });
+      return patchRes.ok;
+    } else {
+      const postRes = await fetch(`https://api.vercel.com/v10/projects/${projectId}/env${teamQuery}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          key,
+          value,
+          type: "plain",
+          target: ["production", "preview", "development"],
+        }),
+      });
+      return postRes.ok;
+    }
+  } catch (err) {
+    console.error("[VERCEL ENV] Failed to update env var:", err);
+    return false;
+  }
+}
+
+async function setAdminPassword(newPassword) {
+  inMemoryAdminPassword = newPassword;
+  process.env.ADMIN_PASSWORD = newPassword;
+
+  const updatedOnVercel = await updateVercelEnvVar("ADMIN_PASSWORD", newPassword);
+  if (updatedOnVercel) {
+    console.log("[AUTH] Admin password updated in Vercel Environment Variables via API");
+    return { success: true, message: "Password updated permanently in Vercel Environment Variables!" };
+  }
+
+  console.warn("[AUTH] Admin password updated in process env. Update ADMIN_PASSWORD in Vercel Dashboard Settings to persist across redeployments.");
+  return {
+    success: true,
+    message: "Password updated. Remember to set ADMIN_PASSWORD in Vercel Project Settings for permanent persistence.",
+  };
+}
 
 app.get("/api/ping", (req, res) => {
   res.status(200).send("ping success!");
 });
 
 // Admin Login Endpoint
-app.post("/api/admin/login", (req, res) => {
+app.post("/api/admin/login", async (req, res) => {
   const { password } = req.body;
   if (!password) {
     return res.status(400).json({ success: false, error: "Password is required" });
   }
 
-  if (password === serverAdminPassword) {
+  const currentPassword = process.env.ADMIN_PASSWORD || inMemoryAdminPassword || "admin123";
+
+  if (password === currentPassword) {
     console.log("[AUTH] Admin login successful");
     return res.status(200).json({ success: true, message: "Admin authenticated successfully" });
   }
@@ -54,15 +123,14 @@ app.post("/api/admin/login", (req, res) => {
 });
 
 // Admin Change Password Endpoint
-app.post("/api/admin/change-password", (req, res) => {
+app.post("/api/admin/change-password", async (req, res) => {
   const { newPassword } = req.body;
   if (!newPassword || typeof newPassword !== "string" || !newPassword.trim()) {
     return res.status(400).json({ success: false, error: "New password is required" });
   }
 
-  serverAdminPassword = newPassword.trim();
-  console.log("[AUTH] Admin password dynamically updated on server");
-  return res.status(200).json({ success: true, message: "Admin password updated successfully" });
+  const result = await setAdminPassword(newPassword.trim());
+  return res.status(200).json(result);
 });
 
 
