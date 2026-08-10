@@ -61,8 +61,13 @@ async function saveStoredProductsData(productsData) {
 
   if (redisUrl && redisToken) {
     try {
-      await fetch(`${redisUrl}/set/products_data/${encodeURIComponent(JSON.stringify(productsData))}`, {
-        headers: { Authorization: `Bearer ${redisToken}` }
+      await fetch(redisUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${redisToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(["SET", "products_data", JSON.stringify(productsData)])
       });
       console.log("[PRODUCTS] Products data persisted to Upstash Redis");
     } catch (err) {
@@ -145,15 +150,23 @@ loadDocumentsFromRedis();
 async function saveDocumentToRedis(key, data) {
   const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
   const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!redisUrl || !redisToken) return;
+  if (!redisUrl || !redisToken) {
+    console.warn(`[DOCUMENTS] Upstash Redis credentials missing. Cannot save ${key}.`);
+    return;
+  }
 
   try {
-    await fetch(`${redisUrl}/set/${key}`, {
+    const jsonStr = JSON.stringify(data);
+    const res = await fetch(redisUrl, {
       method: "POST",
-      headers: { Authorization: `Bearer ${redisToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify(data)
+      headers: {
+        Authorization: `Bearer ${redisToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(["SET", key, jsonStr])
     });
-    console.log(`[DOCUMENTS] Saved ${key} to Upstash Redis`);
+    const result = await res.json();
+    console.log(`[DOCUMENTS] Upstash Redis SET result for ${key}:`, result);
   } catch (err) {
     console.error(`[DOCUMENTS] Failed to save ${key} to Upstash Redis:`, err);
   }
