@@ -97,6 +97,73 @@ app.post("/api/save-products-data", async (req, res) => {
   }
 });
 
+// In-memory documents store (persisted to Redis if configured)
+let serverDocumentsData = null;
+
+async function getStoredDocumentsData() {
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (redisUrl && redisToken) {
+    try {
+      const response = await fetch(`${redisUrl}/get/documents_data`, {
+        headers: { Authorization: `Bearer ${redisToken}` }
+      });
+      const data = await response.json();
+      if (data && data.result) {
+        return JSON.parse(data.result);
+      }
+    } catch (err) {
+      console.error("[DOCUMENTS] Failed to fetch documents from Upstash Redis:", err);
+    }
+  }
+  return serverDocumentsData;
+}
+
+async function saveStoredDocumentsData(documentsData) {
+  serverDocumentsData = documentsData;
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (redisUrl && redisToken) {
+    try {
+      await fetch(`${redisUrl}/set/documents_data/${encodeURIComponent(JSON.stringify(documentsData))}`, {
+        headers: { Authorization: `Bearer ${redisToken}` }
+      });
+      console.log("[DOCUMENTS] Documents data persisted to Upstash Redis");
+    } catch (err) {
+      console.error("[DOCUMENTS] Failed to persist documents data to Upstash Redis:", err);
+    }
+  }
+}
+
+// Documents Endpoints
+app.get("/api/documents", async (req, res) => {
+  try {
+    const documents = await getStoredDocumentsData();
+    return res.status(200).json({ success: true, documents });
+  } catch (err) {
+    console.error("[DOCUMENTS] Error fetching documents:", err);
+    return res.status(500).json({ success: false, error: "Failed to fetch documents" });
+  }
+});
+
+app.post("/api/save-documents", async (req, res) => {
+  const { documents } = req.body;
+  if (!documents) {
+    return res.status(400).json({ success: false, error: "documents is required" });
+  }
+
+  try {
+    await saveStoredDocumentsData(documents);
+    console.log("[DOCUMENTS] Documents updated on server");
+    return res.status(200).json({ success: true, message: "Documents saved successfully on server" });
+  } catch (err) {
+    console.error("[DOCUMENTS] Error saving documents:", err);
+    return res.status(500).json({ success: false, error: "Failed to save documents" });
+  }
+});
+
 // Server-side admin password logic driven strictly by process.env.ADMIN_PASSWORD
 
 async function updateVercelEnvVar(key, value) {
