@@ -99,10 +99,10 @@ app.post("/api/save-products-data", async (req, res) => {
 
 // Server-side PDF Document Store (Certificate & Brochure)
 let certificateBuffer = null;
-let certificateFileName = "RCMCCertificate.pdf";
+let certificateFileName = "RCMC Certificate.pdf";
 
 let brochureBuffer = null;
-let brochureFileName = "BrochureGigabull2025.pdf";
+let brochureFileName = "Brochure Gigabull.pdf";
 
 // Endpoints to upload certificate PDF
 app.post("/api/upload-certificate", (req, res) => {
