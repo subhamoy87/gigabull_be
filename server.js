@@ -293,6 +293,10 @@ app.post("/api/admin/change-password", async (req, res) => {
 app.post("/api/contact", async (req, res) => {
   const { name, email, subject, phone, message } = req.body;
 
+  if (!name || !email || !message) {
+    return res.status(400).json({ error: "Missing required fields." });
+  }
+
   try {
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -304,7 +308,7 @@ app.post("/api/contact", async (req, res) => {
     });
 
     const mailOptions = {
-      from: `Gigabull Contact Form <${process.env.SMTP_USER}>`,
+      from: `Gigabull Enquiry <${process.env.SMTP_USER}>`,
       to: process.env.MY_EMAIL,
       subject: subject || "New Contact Form Submission - GIGABULL",
       html: `
@@ -322,11 +326,11 @@ app.post("/api/contact", async (req, res) => {
             </tr>
             <tr>
               <td style="padding: 4px 8px; font-weight: bold;">Phone:</td>
-              <td style="padding: 4px 8px;">${phone}</td>
+              <td style="padding: 4px 8px;">${phone || "N/A"}</td>
             </tr>
             <tr>
               <td style="padding: 4px 8px; font-weight: bold;">Subject:</td>
-              <td style="padding: 4px 8px;">${subject}</td>
+              <td style="padding: 4px 8px;">${subject || "N/A"}</td>
             </tr>
             <tr>
               <td style="padding: 4px 8px; font-weight: bold;">Message:</td>
@@ -337,14 +341,13 @@ app.post("/api/contact", async (req, res) => {
       `,
     };
 
-    console.log("[EMAIL] Sending to:", process.env.MY_EMAIL);
-
+    console.log(`[EMAIL] Sending contact form to ${process.env.MY_EMAIL}`);
     const info = await transporter.sendMail(mailOptions);
-    console.log("[EMAIL] Message sent:", info.messageId);
+    console.log("[EMAIL] Contact form sent:", info.messageId);
 
     res.status(200).json({ success: true, message: "Email sent successfully." });
   } catch (err) {
-    console.error("[ERROR] Failed to send email:", err);
+    console.error("[ERROR] Failed to send contact email:", err);
     res.status(500).json({ error: "Failed to send email." });
   }
 });
