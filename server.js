@@ -103,178 +103,77 @@ app.post("/api/save-products-data", async (req, res) => {
   }
 });
 
-// Server-side PDF Document Store (Certificate & Brochure)
-let certificateBuffer = null;
-let certificateFileName = "RCMC Certificate.pdf";
+// Server-side PDF Documents Metadata Store (Google Drive Links & Metadata)
+let serverDocumentsData = null;
 
-let brochureBuffer = null;
-let brochureFileName = "Brochure Gigabull.pdf";
-
-async function loadDocumentsFromRedis() {
+async function getStoredDocumentsData() {
   const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
   const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!redisUrl || !redisToken) return;
 
-  try {
-    const certRes = await fetch(`${redisUrl}/get/certificate_data`, {
-      headers: { Authorization: `Bearer ${redisToken}` }
-    });
-    const certData = await certRes.json();
-    if (certData && certData.result) {
-      const parsed = typeof certData.result === 'string' ? JSON.parse(certData.result) : certData.result;
-      if (parsed.pdfBase64) {
-        const clean = parsed.pdfBase64.replace(/^data:application\/pdf;base64,/, "").trim();
-        certificateBuffer = Buffer.from(clean, "base64");
+  if (redisUrl && redisToken) {
+    try {
+      const response = await fetch(`${redisUrl}/get/documents_data`, {
+        headers: { Authorization: `Bearer ${redisToken}` }
+      });
+      const data = await response.json();
+      if (data && data.result) {
+        return typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
       }
-      if (parsed.fileName) certificateFileName = parsed.fileName;
+    } catch (err) {
+      console.error("[DOCUMENTS] Failed to fetch documents from Upstash Redis:", err);
     }
-
-    const brochRes = await fetch(`${redisUrl}/get/brochure_data`, {
-      headers: { Authorization: `Bearer ${redisToken}` }
-    });
-    const brochData = await brochRes.json();
-    if (brochData && brochData.result) {
-      const parsed = typeof brochData.result === 'string' ? JSON.parse(brochData.result) : brochData.result;
-      if (parsed.pdfBase64) {
-        const clean = parsed.pdfBase64.replace(/^data:application\/pdf;base64,/, "").trim();
-        brochureBuffer = Buffer.from(clean, "base64");
-      }
-      if (parsed.fileName) brochureFileName = parsed.fileName;
-    }
-  } catch (err) {
-    console.error("[DOCUMENTS] Error loading documents from Redis:", err);
   }
+  return serverDocumentsData;
 }
-loadDocumentsFromRedis();
 
-async function saveDocumentToRedis(key, data) {
+async function saveStoredDocumentsData(documentsData) {
+  serverDocumentsData = documentsData;
   const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
   const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!redisUrl || !redisToken) {
-    console.warn(`[DOCUMENTS] Upstash Redis credentials missing. Cannot save ${key}.`);
-    return;
-  }
 
-  try {
-    const jsonStr = JSON.stringify(data);
-    const res = await fetch(redisUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${redisToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(["SET", key, jsonStr])
-    });
-    const result = await res.json();
-    console.log(`[DOCUMENTS] Upstash Redis SET result for ${key}:`, result);
-  } catch (err) {
-    console.error(`[DOCUMENTS] Failed to save ${key} to Upstash Redis:`, err);
+  if (redisUrl && redisToken) {
+    try {
+      await fetch(redisUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${redisToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(["SET", "documents_data", JSON.stringify(documentsData)])
+      });
+      console.log("[DOCUMENTS] Documents metadata persisted to Upstash Redis");
+    } catch (err) {
+      console.error("[DOCUMENTS] Failed to persist documents data to Upstash Redis:", err);
+    }
   }
 }
 
-// Endpoints to upload certificate PDF
-app.post("/api/upload-certificate", async (req, res) => {
-  const { pdfBase64, fileName } = req.body;
-  if (!pdfBase64) {
-    return res.status(400).json({ success: false, error: "pdfBase64 is required" });
-  }
-
-  try {
-    const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, "").trim();
-    certificateBuffer = Buffer.from(cleanBase64, "base64");
-    if (fileName) certificateFileName = fileName;
-
-    await saveDocumentToRedis("certificate_data", { pdfBase64, fileName: certificateFileName });
-
-    console.log("[DOCUMENTS] Certificate PDF updated on server:", certificateFileName);
-    return res.status(200).json({
-      success: true,
-      message: "Certificate uploaded successfully",
-      fileName: certificateFileName
-    });
-  } catch (err) {
-    console.error("[DOCUMENTS] Error saving certificate:", err);
-    return res.status(500).json({ success: false, error: "Failed to save certificate" });
-  }
-});
-
-// Endpoints to upload brochure PDF
-app.post("/api/upload-brochure", async (req, res) => {
-  const { pdfBase64, fileName } = req.body;
-  if (!pdfBase64) {
-    return res.status(400).json({ success: false, error: "pdfBase64 is required" });
-  }
-
-  try {
-    const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, "").trim();
-    brochureBuffer = Buffer.from(cleanBase64, "base64");
-    if (fileName) brochureFileName = fileName;
-
-    await saveDocumentToRedis("brochure_data", { pdfBase64, fileName: brochureFileName });
-
-    console.log("[DOCUMENTS] Brochure PDF updated on server:", brochureFileName);
-    return res.status(200).json({
-      success: true,
-      message: "Brochure uploaded successfully",
-      fileName: brochureFileName
-    });
-  } catch (err) {
-    console.error("[DOCUMENTS] Error saving brochure:", err);
-    return res.status(500).json({ success: false, error: "Failed to save brochure" });
-  }
-});
-
-// Serve Certificate PDF binary directly
-app.get("/api/documents/certificate", async (req, res) => {
-  if (!certificateBuffer) {
-    await loadDocumentsFromRedis();
-  }
-  if (!certificateBuffer) {
-    return res.status(404).send("No custom certificate uploaded yet.");
-  }
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `inline; filename="${certificateFileName}"`);
-  res.send(certificateBuffer);
-});
-
-// Serve Brochure PDF binary directly
-app.get("/api/documents/brochure", async (req, res) => {
-  if (!brochureBuffer) {
-    await loadDocumentsFromRedis();
-  }
-  if (!brochureBuffer) {
-    return res.status(404).send("No custom brochure uploaded yet.");
-  }
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `inline; filename="${brochureFileName}"`);
-  res.send(brochureBuffer);
-});
-
-// Get document metadata and server status
+// Document Metadata Endpoints (Google Drive Link Sync)
 app.get("/api/documents", async (req, res) => {
-  if (!certificateBuffer || !brochureBuffer) {
-    await loadDocumentsFromRedis();
+  try {
+    const docs = await getStoredDocumentsData();
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    return res.status(200).json({ success: true, documents: docs || {} });
+  } catch (err) {
+    console.error("[DOCUMENTS] Error fetching documents:", err);
+    return res.status(500).json({ success: false, error: "Failed to fetch documents" });
   }
-  return res.status(200).json({
-    success: true,
-    documents: {
-      certificateUrl: certificateBuffer ? "/api/documents/certificate" : null,
-      certificateName: certificateFileName,
-      brochureUrl: brochureBuffer ? "/api/documents/brochure" : null,
-      brochureName: brochureFileName,
-    }
-  });
 });
 
-// Endpoint to get document metadata (filenames and status)
-app.get("/api/documents/info", (req, res) => {
-  return res.status(200).json({
-    success: true,
-    hasCertificate: !!certificateBuffer,
-    certificateFileName,
-    hasBrochure: !!brochureBuffer,
-    brochureFileName,
-  });
+app.post("/api/save-documents", async (req, res) => {
+  const { documents } = req.body;
+  if (!documents) {
+    return res.status(400).json({ success: false, error: "documents is required" });
+  }
+
+  try {
+    await saveStoredDocumentsData(documents);
+    console.log("[DOCUMENTS] Documents metadata updated on server");
+    return res.status(200).json({ success: true, message: "Documents saved successfully" });
+  } catch (err) {
+    console.error("[DOCUMENTS] Error saving documents metadata:", err);
+    return res.status(500).json({ success: false, error: "Failed to save documents metadata" });
+  }
 });
 
 // Server-side admin password logic driven strictly by process.env.ADMIN_PASSWORD
