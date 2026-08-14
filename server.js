@@ -303,11 +303,17 @@ app.post("/api/contact", async (req, res) => {
     const mailOptions = {
       from: `Gigabull Enquiry <${process.env.SMTP_USER}>`,
       to: process.env.MY_EMAIL,
-      subject: `New Contact Enquiry from ${name}${subject ? ` - ${subject}` : ""}`,
+      subject: `Product Enquiry - Contact Form (${name})`,
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
           <h2 style="color: #DFBF58;">New Product Enquiry</h2>
           <p>You have received a new message through the contact form:</p>
+
+          <p>
+            <strong>Website Link:</strong>
+            <a href="https://gigabull.in/contact" target="_blank" rel="noopener noreferrer">https://gigabull.in/contact</a>
+          </p>
+
           <table style="margin-top: 10px;">
             <tr>
               <td style="padding: 4px 8px; font-weight: bold;">Name:</td>
