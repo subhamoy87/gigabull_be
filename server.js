@@ -303,10 +303,10 @@ app.post("/api/contact", async (req, res) => {
     const mailOptions = {
       from: `Gigabull Enquiry <${process.env.SMTP_USER}>`,
       to: process.env.MY_EMAIL,
-      subject: subject || "New Contact Form Submission - GIGABULL",
+      subject: subject || "Product Enquiry - GIGABULL",
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-          <h2 style="color: #DFBF58;">New Contact Submission</h2>
+          <h2 style="color: #DFBF58;">New Product Enquiry</h2>
           <p>You have received a new message through the contact form:</p>
           <table style="margin-top: 10px;">
             <tr>
